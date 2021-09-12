@@ -1,4 +1,7 @@
-/* Sets all the text color to red! */
-body {
-    color: red;
+
+.stream-timestamp {
+    font-family: monospace;
+    color: dimgray;
+    font-size: 90%;
+    /* margin-right: 10px; */
 }

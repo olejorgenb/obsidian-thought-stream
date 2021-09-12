@@ -1,8 +1,13 @@
-import { findSourceMap } from 'module';
-import { App, MarkdownEditView, MarkdownView, Modal, Notice, Plugin, PluginSettingTab, Setting, View } from 'obsidian';
+import * as CodeMirror from 'codemirror'
+import { App, Editor, MarkdownView, Plugin, PluginSettingTab, View } from 'obsidian';
+
+// TODO: store timestamps as unixtime and add a presentation layer for timerendering
+import { format, parse } from 'date-fns'
+
+const TIMESTAMP_FORMAT = "yyyy-MM-dd HH:mm:ss"
+const SEPARATOR = "   "
 
 interface ThoughtStreamSettings {
-	mySetting: string;
 }
 
 const DEFAULT_SETTINGS: ThoughtStreamSettings = {
@@ -14,6 +19,10 @@ const DEFAULT_SETTINGS: ThoughtStreamSettings = {
  */
 function isTagged(app: App, tag: string) {
 	let active = app.workspace.getActiveFile()
+	if (!active) {
+		return false
+	}
+
 	let pageCache = app.metadataCache.getFileCache(active)
 	if (!tag.startsWith("#")) {
 		tag = "#" + tag
@@ -21,30 +30,53 @@ function isTagged(app: App, tag: string) {
 	return Boolean(pageCache.tags?.find(t => t.tag === tag))
 }
 
+function mkTimestamp(date?: Date): string {
+	date = date ?? new Date()
+
+	return format(date, TIMESTAMP_FORMAT)
+}
+
 interface Thought {
+	timestampString: string
 	timestamp: Date
 	content: string
 }
 
 function parseThought(line: string) {
-	const dateRe = /^([0-9]{4}-[1-9]-[1-9] [0-2][0-9]:[0-5][0-9]:[0-5][0-9])\t(.*)/
+	// const dateRe = /^([0-9]{4}-[1-9]-[1-9] [0-2][0-9]:[0-5][0-9]:[0-5][0-9])\t(.*)/
+	const timstampRe = new RegExp(`^(.+?)${SEPARATOR}(.*)`)   // TODO: use a actual timestamp regex like above?
 
-	const match = dateRe.exec(line)
+	const match = timstampRe.exec(line)
 	if (match) {
-		const [timestampString, content] = match
-		const timestamp = Date.parse(timestampString)
+		const [timestampString, content] = match.slice(1)  // Note: first entry is the full match
+
+		const timestamp = parse(timestampString, TIMESTAMP_FORMAT, new Date())
 		return {
-			timestamp, content
+			timestampString,
+			timestamp,
+			content
 		}
 
 	} else {
 		return
 	}
+}
 
+function endOfLinePos(cm: CodeMirror.Editor, line: number): CodeMirror.Position {
+	return {
+		line: line,
+		ch: cm.getLine(line).length
+	}
 }
 
 function isMarkdownView(view: View): view is MarkdownView {
 	return view.getViewType() === "markdown"
+}
+
+const timestampMarkOptions: CodeMirror.TextMarkerOptions = {
+	readOnly: true,
+	className: "stream-timestamp",
+	inclusiveRight: false,
 }
 
 export default class ThoughtStream extends Plugin {
@@ -52,53 +84,78 @@ export default class ThoughtStream extends Plugin {
 
 	cm: CodeMirror.Editor
 
-	async lockLines(doc: CodeMirror.Doc) {
-
-		doc.markText(
-			{ line: 0, ch: 0 },
-			{ line: doc.lineCount() - 1, ch: 0 },
-			{
-				readOnly: true
-			}
-		)
-/* 		doc.eachLine(line => {
-			if (parseThought(line.text)) {
+	async initializeStreamHistory(doc: CodeMirror.Doc) {
+		doc.eachLine(line => {
+			const t = parseThought(line.text)
+			if (t) {
 				const n = doc.getLineNumber(line)
-				doc.markText({line: n, ch: 0}, {line: n+1, ch: 0})
+				doc.markText({ line: n, ch: 0 }, { line: n, ch: t.timestampString.length + SEPARATOR.length }, timestampMarkOptions)
 			}
-		}) */
+		})
+	}
+
+	lockLine(line: number) {
+		const cm = this.cm
+		const eol = endOfLinePos(cm, line)
+		cm.getDoc().markText({ line, ch: 0 }, eol, { readOnly: true })
+	}
+
+	updateTimestamp(line: number, timestamp?: Date) {
+		const cm = this.cm
+
+		const timestampStr = mkTimestamp(timestamp)
+		const doc = cm.getDoc()
+		const marks = doc.findMarksAt({line: line, ch: 0})
+
+		if (marks.length !== 1) {
+			console.warn("Found unexpected marks on timestamp string. Clearing all marks!", marks)
+		}
+
+		for (const mark of marks) {
+			mark.clear()
+		}
+
+		cm.replaceRange(timestampStr, { line: line, ch: 0 }, { line: line, ch: timestampStr.length })
+		doc.markText({ line: line, ch: 0 }, { line: line, ch: timestampStr.length + SEPARATOR.length }, timestampMarkOptions)
+		doc.markText({ line: line, ch: 0 }, { line: line, ch: timestampStr.length + SEPARATOR.length }, timestampMarkOptions)
+	}
+
+	async submitThought(editor_: Editor, view: MarkdownView) {
+		const cm = this.cm
+
+		const thoughtLine = cm.lastLine()
+
+		this.updateTimestamp(thoughtLine)
+
+		this.lockLine(thoughtLine)
+
+		this.newPrompt(thoughtLine)
+	}
+
+	private newPrompt(line: number) {
+		const cm = this.cm
+
+		cm.replaceRange(
+			"\n" + mkTimestamp() + SEPARATOR,
+			endOfLinePos(cm, line)
+		)
+
+		const promptLine = cm.lastLine()
+		const eol = endOfLinePos(cm, promptLine)
+
+		cm.getDoc().markText(
+			{ line: promptLine, ch: 0 },
+			eol,
+			timestampMarkOptions
+		)
+
+		cm.setCursor(eol)
 	}
 
 	async onload() {
 		console.log('loading plugin');
 
-		await this.loadSettings();
-// asdf asdf
-/* 		this.addRibbonIcon('dice', 'Sample Plugin', () => {
-			new Notice('This is a notice!');
-		});
-
-		this.addStatusBarItem().setText('Status Bar Text');
-
-		this.addCommand({
-			id: 'open-sample-modal',
-			name: 'Open Sample Modal',
-			// callback: () => {
-			// 	console.log('Simple Callback');
-			// },
-			checkCallback: (checking: boolean) => {
-				let leaf = this.app.workspace.activeLeaf;
-				if (leaf) {
-					if (!checking) {
-						new SampleModal(this.app).open();
-					}
-					return true;
-				}
-				return false;
-			}
-		});
- */
-		this.addSettingTab(new SampleSettingTab(this.app, this));
+		this.addSettingTab(new SettingsTab(this.app, this));
 
 		this.registerCodeMirror((cm: CodeMirror.Editor) => {
 			console.log('codemirror', cm)
@@ -111,22 +168,23 @@ export default class ThoughtStream extends Plugin {
 
 		this.registerEvent(this.app.workspace.on("file-open", this.initialize.bind(this)));
 
-		this.lockLines(this.cm.getDoc())
+		this.addCommand({
+			id: "submit-thought",
+			name: "submit-thought",
+			editorCallback: this.submitThought.bind(this),
+			hotkeys: [{ key: "Enter", modifiers: [] }]
+		})
 
 		// this.registerInterval(window.setInterval(() => console.log('setInterval'), 5 * 60 * 1000));
 	}
 
 	async initialize() {
 		if (isTagged(this.app, "#stream")) {
-			let active = this.app.workspace.getActiveFile()
-			let pageCache = this.app.metadataCache.getFileCache(active)
-
 			const leaf = this.app.workspace.activeLeaf
-			window.__leaf = leaf
-			const view = this.app.workspace.activeLeaf.view
+			const view = leaf.view
 
 			if (isMarkdownView(view)) {
-				this.lockLines(this.cm.getDoc())
+				this.initializeStreamHistory(this.cm.getDoc())
 			}
 		}
 	}
@@ -144,23 +202,7 @@ export default class ThoughtStream extends Plugin {
 	}
 }
 
-class SampleModal extends Modal {
-	constructor(app: App) {
-		super(app);
-	}
-
-	onOpen() {
-		let {contentEl} = this;
-		contentEl.setText('Woah!');
-	}
-
-	onClose() {
-		let {contentEl} = this;
-		contentEl.empty();
-	}
-}
-
-class SampleSettingTab extends PluginSettingTab {
+class SettingsTab extends PluginSettingTab {
 	plugin: ThoughtStream;
 
 	constructor(app: App, plugin: ThoughtStream) {
@@ -173,18 +215,6 @@ class SampleSettingTab extends PluginSettingTab {
 
 		containerEl.empty();
 
-		containerEl.createEl('h2', {text: 'Settings for my awesome plugin.'});
-
-		new Setting(containerEl)
-			.setName('Setting #1')
-			.setDesc('It\'s a secret')
-			.addText(text => text
-				.setPlaceholder('Enter your secret')
-				.setValue('')
-				.onChange(async (value) => {
-					console.log('Secret: ' + value);
-					this.plugin.settings.mySetting = value;
-					await this.plugin.saveSettings();
-				}));
+		containerEl.createEl('h2', {text: 'Notthing to see here'});
 	}
 }
