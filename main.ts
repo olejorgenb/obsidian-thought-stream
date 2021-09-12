@@ -1,5 +1,5 @@
 import * as CodeMirror from 'codemirror'
-import { App, Editor, MarkdownView, Plugin, PluginSettingTab, View } from 'obsidian';
+import { App, Editor, MarkdownView, Plugin, PluginSettingTab, View } from 'obsidian'
 
 // TODO: store timestamps as unixtime and add a presentation layer for timerendering
 import { format, parse } from 'date-fns'
@@ -80,7 +80,7 @@ const timestampMarkOptions: CodeMirror.TextMarkerOptions = {
 }
 
 export default class ThoughtStream extends Plugin {
-	settings: ThoughtStreamSettings;
+	settings: ThoughtStreamSettings
 
 	cm: CodeMirror.Editor
 
@@ -153,20 +153,20 @@ export default class ThoughtStream extends Plugin {
 	}
 
 	async onload() {
-		console.log('loading plugin');
+		console.log('loading plugin')
 
-		this.addSettingTab(new SettingsTab(this.app, this));
+		this.addSettingTab(new SettingsTab(this.app, this))
 
 		this.registerCodeMirror((cm: CodeMirror.Editor) => {
 			console.log('codemirror', cm)
 			this.cm = cm
-		});
+		})
 
 		this.registerDomEvent(document, 'click', (evt: MouseEvent) => {
-			console.log('click', evt);
-		});
+			console.log('click', evt)
+		})
 
-		this.registerEvent(this.app.workspace.on("file-open", this.initialize.bind(this)));
+		this.registerEvent(this.app.workspace.on("file-open", this.initialize.bind(this)))
 
 		this.addCommand({
 			id: "submit-thought",
@@ -175,7 +175,7 @@ export default class ThoughtStream extends Plugin {
 			hotkeys: [{ key: "Enter", modifiers: [] }]
 		})
 
-		// this.registerInterval(window.setInterval(() => console.log('setInterval'), 5 * 60 * 1000));
+		// this.registerInterval(window.setInterval(() => console.log('setInterval'), 5 * 60 * 1000))
 	}
 
 	async initialize() {
@@ -190,31 +190,31 @@ export default class ThoughtStream extends Plugin {
 	}
 
 	onunload() {
-		console.log('unloading plugin');
+		console.log('unloading plugin')
 	}
 
 	async loadSettings() {
-		this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+		this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData())
 	}
 
 	async saveSettings() {
-		await this.saveData(this.settings);
+		await this.saveData(this.settings)
 	}
 }
 
 class SettingsTab extends PluginSettingTab {
-	plugin: ThoughtStream;
+	plugin: ThoughtStream
 
 	constructor(app: App, plugin: ThoughtStream) {
-		super(app, plugin);
-		this.plugin = plugin;
+		super(app, plugin)
+		this.plugin = plugin
 	}
 
 	display(): void {
-		let {containerEl} = this;
+		let {containerEl} = this
 
-		containerEl.empty();
+		containerEl.empty()
 
-		containerEl.createEl('h2', {text: 'Notthing to see here'});
+		containerEl.createEl('h2', {text: 'Notthing to see here'})
 	}
 }
