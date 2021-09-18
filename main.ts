@@ -120,6 +120,8 @@ export default class ThoughtStream extends Plugin {
 		doc.markText({ line: line, ch: 0 }, { line: line, ch: timestampStr.length + SEPARATOR.length }, timestampMarkOptions)
 	}
 
+
+
 	async submitThought(editor_: Editor, view: MarkdownView) {
 		const cm = this.cm
 
@@ -168,18 +170,25 @@ export default class ThoughtStream extends Plugin {
 
 		this.registerEvent(this.app.workspace.on("file-open", this.initialize.bind(this)))
 
-		this.addCommand({
+		const c = this.addCommand({
 			id: "submit-thought",
 			name: "submit-thought",
+			// editorCheckCallback: this.isStreamNote.bind(this),
 			editorCallback: this.submitThought.bind(this),
-			hotkeys: [{ key: "Enter", modifiers: [] }]
+			hotkeys: [{ key: "Enter", modifiers: ["Alt"] }]
 		})
+
 
 		// this.registerInterval(window.setInterval(() => console.log('setInterval'), 5 * 60 * 1000))
 	}
 
+	/** Checks if the active leaf is a stream note */
+	isStreamNote() {
+		return isTagged(this.app, "#stream")
+	}
+
 	async initialize() {
-		if (isTagged(this.app, "#stream")) {
+		if (this.isStreamNote()) {
 			const leaf = this.app.workspace.activeLeaf
 			const view = leaf.view
 
